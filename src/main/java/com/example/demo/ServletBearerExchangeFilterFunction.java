@@ -1,7 +1,5 @@
 package com.example.demo;
 
-import java.util.function.Consumer;
-
 import org.reactivestreams.Subscription;
 import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Hooks;
@@ -19,7 +17,6 @@ import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
-import org.springframework.web.reactive.function.client.WebClient;
 
 /**
  * An {@link ExchangeFilterFunction} that adds the
@@ -30,9 +27,13 @@ import org.springframework.web.reactive.function.client.WebClient;
  * configuration:
  *
  * <pre>
+ * 	@Bean
+ * 	ExchangeFilterFunction bearer() {
+ * 	    return new ServletBearerExchangeFilterFunction();
+ * 	}
+ *
  *  @Bean
- *  WebClient webClient() {
- *      ServletBearerExchangeFilterFunction bearer = new ServletBearerExchangeFilterFunction();
+ *  WebClient webClient(ExchangeFilterFunction bearer) {
  *      return WebClient.builder()
  *              .filter(bearer).build();
  *  }
@@ -83,12 +84,7 @@ public final class ServletBearerExchangeFilterFunction
 	}
 
 	private Mono<Authentication> currentAuthentication(Context ctx) {
-		RequestContextDataHolder holder = RequestContextSubscriber.getRequestContext(ctx);
-		if (holder == null) {
-			return Mono.empty();
-		}
-
-		return Mono.justOrEmpty(holder.getAuthentication());
+		return Mono.justOrEmpty(RequestContextSubscriber.getAuthentication(ctx));
 	}
 
 	private ClientRequest bearer(ClientRequest request, AbstractOAuth2Token token) {
@@ -102,20 +98,8 @@ public final class ServletBearerExchangeFilterFunction
 		return new RequestContextSubscriber<>(delegate, authentication);
 	}
 
-	private static class RequestContextDataHolder {
-		private final Authentication authentication;
-
-		RequestContextDataHolder(Authentication authentication) {
-			this.authentication = authentication;
-		}
-
-		public Authentication getAuthentication() {
-			return this.authentication;
-		}
-	}
-
 	private static class RequestContextSubscriber<T> implements CoreSubscriber<T> {
-		private static final String REQUEST_CONTEXT_DATA_HOLDER_ATTR_NAME =
+		private static final String AUTHENTICATION_ATTR_NAME =
 				RequestContextSubscriber.class.getName().concat(".REQUEST_CONTEXT_DATA_HOLDER");
 
 		private CoreSubscriber<T> delegate;
@@ -127,19 +111,18 @@ public final class ServletBearerExchangeFilterFunction
 			this.delegate = delegate;
 			Context parentContext = this.delegate.currentContext();
 			Context context;
-			if (authentication == null || parentContext.hasKey(REQUEST_CONTEXT_DATA_HOLDER_ATTR_NAME)) {
+			if (authentication == null || parentContext.hasKey(AUTHENTICATION_ATTR_NAME)) {
 				context = parentContext;
 			} else {
-				context = parentContext.put(REQUEST_CONTEXT_DATA_HOLDER_ATTR_NAME,
-						new RequestContextDataHolder(authentication));
+				context = parentContext.put(AUTHENTICATION_ATTR_NAME, authentication);
 			}
 
 			this.context = context;
 		}
 
 		@Nullable
-		static RequestContextDataHolder getRequestContext(Context ctx) {
-			return ctx.getOrDefault(REQUEST_CONTEXT_DATA_HOLDER_ATTR_NAME, null);
+		static Authentication getAuthentication(Context ctx) {
+			return ctx.getOrDefault(AUTHENTICATION_ATTR_NAME, null);
 		}
 
 		@Override
