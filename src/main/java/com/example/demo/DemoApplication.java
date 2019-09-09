@@ -1,7 +1,12 @@
 package com.example.demo;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.concurrent.TimeoutException;
+
+import reactor.core.publisher.Mono;
+import reactor.util.context.Context;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
@@ -12,6 +17,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 
@@ -24,7 +30,8 @@ public class DemoApplication {
 		WebClient rest;
 
 		@GetMapping("/hello/{name}")
-		public String hello(@PathVariable(name="name") String name) {
+		public String hello(@PathVariable(name="name") String name) throws InterruptedException {
+			Thread.sleep(50 + (int) (100 * Math.random()));
 			return "Hello, " + name + "!";
 		}
 
@@ -45,6 +52,17 @@ public class DemoApplication {
 					.block();
 
 		}
+
+		@GetMapping("/hello-with-retry")
+		public String helloWithRetry() {
+			return this.rest.get()
+					.uri("http://localhost:8080/hello/one")
+					.retrieve()
+					.bodyToMono(String.class)
+					.timeout(Duration.ofMillis(100))
+					.retry(3, TimeoutException.class::isInstance)
+					.block();
+		}
 	}
 
 	@Bean
@@ -55,6 +73,7 @@ public class DemoApplication {
 	@Bean
 	WebClient rest(ExchangeFilterFunction bearer) {
 		return WebClient.builder()
+				.filter((request, next) -> Mono.defer(() -> next.exchange(request)))
 				.filter(bearer)
 				.build();
 	}
